@@ -102,9 +102,14 @@ export function NewApplicationPage() {
           }
           {...register("company", {
             required: "Company is required",
-            minLength: {
-              value: 2,
-              message: "At least 2 characters",
+
+            validate: (value) =>
+              value.trim().length >= 2 ||
+              "At least 2 non-space characters",
+
+            maxLength: {
+              value: 120,
+              message: "Company name is too long",
             },
           })}
         />
@@ -125,9 +130,14 @@ export function NewApplicationPage() {
           }
           {...register("role", {
             required: "Job title is required",
-            minLength: {
-              value: 2,
-              message: "At least 2 characters",
+
+            validate: (value) =>
+              value.trim().length >= 2 ||
+              "At least 2 non-space characters",
+
+            maxLength: {
+              value: 160,
+              message: "Job title is too long",
             },
           })}
         />
@@ -149,6 +159,11 @@ export function NewApplicationPage() {
             errors.link ? "link-error" : undefined
           }
           {...register("link", {
+            maxLength: {
+              value: 2048,
+              message: "That link is too long",
+            },
+
             validate: (value) =>
               isValidUrl(value) ||
               "That does not look like a link",
@@ -220,11 +235,27 @@ export function NewApplicationPage() {
         <textarea
           id="notes"
           rows={4}
-          {...register("notes")}
+          aria-invalid={!!errors.notes}
+          aria-describedby={
+            errors.notes
+              ? "notes-error"
+              : undefined
+          }
+          {...register("notes", {
+            maxLength: {
+              value: 10000,
+              message: "Notes are too long",
+            },
+          })}
         />
 
-        {error && (
-          <p role="alert">{error}</p>
+        {errors.notes && (
+          <p
+            id="notes-error"
+            role="alert"
+          >
+            {errors.notes.message}
+          </p>
         )}
 
         <div className="actions">
