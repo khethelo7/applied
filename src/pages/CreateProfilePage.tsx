@@ -52,7 +52,7 @@ export function CreateProfilePage() {
 
 
   const email =
-    state?.email;
+    state?.email ?? '';
 
 
   /*
