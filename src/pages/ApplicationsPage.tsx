@@ -27,7 +27,7 @@ export function ApplicationsPage(){
                 {applications.length === 0 ? 
                     <div className="panel">
                         <p>No applications yet.</p>
-                        <Link to="/new">Add your first application</Link>
+                        <Link to="/applications/new">Add your first application</Link>
                     </div> : 
                     <>
                         <FilterBar search={search} setSearch={setSearch} stage={stage} setStage={setStage}/>

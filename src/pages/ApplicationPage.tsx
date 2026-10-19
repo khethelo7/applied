@@ -144,7 +144,7 @@ export function ApplicationPage() {
           that application
         </h1>
 
-        <Link to="/">
+        <Link to="/applications">
           Back to all applications
         </Link>
       </main>
@@ -208,7 +208,7 @@ export function ApplicationPage() {
     try {
       await remove(id);
 
-      navigate('/');
+      navigate('/applications');
     } catch {
       /*
        * Error is displayed below.
@@ -218,7 +218,7 @@ export function ApplicationPage() {
 
   return (
     <main>
-      <Link to="/">
+      <Link to="/applications">
         Back to applications
       </Link>
 

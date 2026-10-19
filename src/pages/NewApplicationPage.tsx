@@ -75,7 +75,7 @@ export function NewApplicationPage() {
 
     try {
       await add(application);
-      navigate("/");
+      navigate("/applications");
     } catch {
       // useApplications already provides the error message
     }
@@ -83,7 +83,7 @@ export function NewApplicationPage() {
 
   return (
     <main>
-      <Link to="/">← Back to applications</Link>
+      <Link to="/applications">← Back to applications</Link>
 
       <h1>Add an application</h1>
 

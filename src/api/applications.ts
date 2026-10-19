@@ -1,4 +1,15 @@
-import { seed } from '../data/seed';
+import {
+  supabase,
+} from '../lib/supabase';
+
+import {
+  getCurrentEmail,
+} from '../lib/identity';
+
+import {
+  findProfileByEmail,
+} from './profiles';
+
 import {
   STAGES,
   type Application,
@@ -6,50 +17,86 @@ import {
   type Stage,
 } from '../types';
 
-const KEY = 'applied-applications-v1';
 
-const MAX_COMPANY_LENGTH = 120;
-const MAX_ROLE_LENGTH = 160;
-const MAX_LINK_LENGTH = 2048;
-const MAX_NOTES_LENGTH = 10_000;
+const MAX_COMPANY_LENGTH =
+  120;
+
+const MAX_ROLE_LENGTH =
+  160;
+
+const MAX_LINK_LENGTH =
+  2048;
+
+const MAX_NOTES_LENGTH =
+  10_000;
+
 
 /*
 |--------------------------------------------------------------------------
-| Storage helpers
+| Database row
 |--------------------------------------------------------------------------
 */
 
-function storageError(
-  action: 'read' | 'write',
-  cause: unknown
-): Error {
-  console.error(
-    `Unable to ${action} application storage`,
-    cause
-  );
+type ApplicationRow = {
+  id: string;
 
-  return new Error(
-    action === 'read'
-      ? 'Unable to read saved applications from this browser.'
-      : 'Unable to save applications. Browser storage may be full or unavailable.'
-  );
+  profile_id: string;
+
+  company: string;
+
+  role: string;
+
+  link: string | null;
+
+  date_sent: string | null;
+
+  stage: Stage;
+
+  notes: string | null;
+
+  created_at: string;
+};
+
+
+/*
+|--------------------------------------------------------------------------
+| Mapping
+|--------------------------------------------------------------------------
+*/
+
+function mapApplication(
+  row: ApplicationRow
+): Application {
+  return {
+    id:
+      row.id,
+
+    company:
+      row.company,
+
+    role:
+      row.role,
+
+    link:
+      row.link ??
+      undefined,
+
+    dateSent:
+      row.date_sent ??
+      '',
+
+    stage:
+      row.stage,
+
+    notes:
+      row.notes ??
+      undefined,
+
+    createdAt:
+      row.created_at,
+  };
 }
 
-function getItem(): string | null {
-  try {
-    return localStorage.getItem(KEY);
-  } catch (error) {
-    throw storageError('read', error);
-  }
-}
-
-function setItem(value: string): void {
-  try {
-    localStorage.setItem(KEY, value);
-  } catch (error) {
-    throw storageError('write', error);
-  }
-}
 
 /*
 |--------------------------------------------------------------------------
@@ -57,208 +104,49 @@ function setItem(value: string): void {
 |--------------------------------------------------------------------------
 */
 
-function isStage(value: unknown): value is Stage {
+function isStage(
+  value: unknown
+): value is Stage {
   return (
-    typeof value === 'string' &&
-    (STAGES as readonly string[]).includes(value)
+    typeof value ===
+      'string' &&
+
+    (
+      STAGES as
+      readonly string[]
+    ).includes(value)
   );
 }
 
-function isSafeHttpUrl(value: string): boolean {
+
+function isSafeHttpUrl(
+  value: string
+): boolean {
   try {
-    const url = new URL(value);
+    const url =
+      new URL(value);
 
     return (
-      url.protocol === 'http:' ||
-      url.protocol === 'https:'
+      url.protocol ===
+        'http:' ||
+
+      url.protocol ===
+        'https:'
     );
   } catch {
     return false;
   }
 }
 
-function validateApplication(
-  value: unknown
-): Application {
-  if (
-    !value ||
-    typeof value !== 'object'
-  ) {
-    throw new Error(
-      'A saved application has an invalid format.'
-    );
-  }
-
-  const job = value as Record<string, unknown>;
-
-  if (
-    typeof job.id !== 'string' ||
-    !job.id
-  ) {
-    throw new Error(
-      'A saved application is missing its ID.'
-    );
-  }
-
-  if (
-    typeof job.company !== 'string' ||
-    !job.company.trim()
-  ) {
-    throw new Error(
-      'A saved application is missing its company name.'
-    );
-  }
-
-  if (
-    typeof job.role !== 'string' ||
-    !job.role.trim()
-  ) {
-    throw new Error(
-      'A saved application is missing its job title.'
-    );
-  }
-
-  if (
-    typeof job.dateSent !== 'string'
-  ) {
-    throw new Error(
-      'A saved application has an invalid sent date.'
-    );
-  }
-
-  if (!isStage(job.stage)) {
-    throw new Error(
-      'A saved application has an invalid stage.'
-    );
-  }
-
-  if (
-    typeof job.createdAt !== 'string' ||
-    Number.isNaN(Date.parse(job.createdAt))
-  ) {
-    throw new Error(
-      'A saved application has an invalid creation date.'
-    );
-  }
-
-  if (
-    job.link !== undefined &&
-    (
-      typeof job.link !== 'string' ||
-      !isSafeHttpUrl(job.link)
-    )
-  ) {
-    throw new Error(
-      'A saved application has an invalid advert link.'
-    );
-  }
-
-  if (
-    job.notes !== undefined &&
-    typeof job.notes !== 'string'
-  ) {
-    throw new Error(
-      'A saved application has invalid notes.'
-    );
-  }
-
-  return job as unknown as Application;
-}
-
-/*
-|--------------------------------------------------------------------------
-| Read / write
-|--------------------------------------------------------------------------
-*/
-
-function read(): Application[] {
-  const raw = getItem();
-
-  /*
-   * First ever visit:
-   * populate localStorage with the seed applications.
-   */
-  if (raw === null) {
-    const initial = seed.map((job) => ({
-      ...job,
-    }));
-
-    setItem(JSON.stringify(initial));
-
-    return initial;
-  }
-
-  let parsed: unknown;
-
-  try {
-    parsed = JSON.parse(raw);
-  } catch (error) {
-    console.error(
-      'Saved application data is not valid JSON',
-      error
-    );
-
-    throw new Error(
-      'Saved application data is corrupted and could not be loaded.'
-    );
-  }
-
-  if (!Array.isArray(parsed)) {
-    throw new Error(
-      'Saved applications are not a list.'
-    );
-  }
-
-  /*
-   * Do not blindly trust localStorage.
-   *
-   * Users can edit it manually and older versions of the
-   * application could theoretically have stored bad data.
-   */
-  const jobs = parsed.map(
-    validateApplication
-  );
-
-  /*
-   * IDs must be unique.
-   *
-   * Duplicate IDs can cause React rendering problems and
-   * can make deletion/update operations ambiguous.
-   */
-  const ids = new Set<string>();
-
-  for (const job of jobs) {
-    if (ids.has(job.id)) {
-      throw new Error(
-        `Saved application data contains a duplicate ID: ${job.id}`
-      );
-    }
-
-    ids.add(job.id);
-  }
-
-  return jobs;
-}
-
-function write(
-  jobs: Application[]
-): void {
-  setItem(
-    JSON.stringify(jobs)
-  );
-}
-
-/*
-|--------------------------------------------------------------------------
-| Input cleanup
-|--------------------------------------------------------------------------
-*/
 
 function normaliseNewApplication(
   input: NewApplication
 ): NewApplication {
-  const company = input.company.trim();
-  const role = input.role.trim();
+  const company =
+    input.company.trim();
+
+  const role =
+    input.role.trim();
 
   const link =
     input.link?.trim() ||
@@ -271,11 +159,13 @@ function normaliseNewApplication(
   const dateSent =
     input.dateSent.trim();
 
+
   if (!company) {
     throw new Error(
       'Company is required.'
     );
   }
+
 
   if (
     company.length >
@@ -286,11 +176,13 @@ function normaliseNewApplication(
     );
   }
 
+
   if (!role) {
     throw new Error(
       'Job title is required.'
     );
   }
+
 
   if (
     role.length >
@@ -301,23 +193,32 @@ function normaliseNewApplication(
     );
   }
 
-  if (!isStage(input.stage)) {
+
+  if (
+    !isStage(input.stage)
+  ) {
     throw new Error(
       'Application stage is invalid.'
     );
   }
 
+
   if (
     link &&
     (
-      !isSafeHttpUrl(link) ||
-      link.length > MAX_LINK_LENGTH
+      !isSafeHttpUrl(
+        link
+      ) ||
+
+      link.length >
+      MAX_LINK_LENGTH
     )
   ) {
     throw new Error(
       'Advert link must be a valid http or https URL.'
     );
   }
+
 
   if (
     notes &&
@@ -329,14 +230,11 @@ function normaliseNewApplication(
     );
   }
 
-  /*
-   * Wishlist applications have not necessarily
-   * been submitted yet.
-   *
-   * Every later stage must have a sent date.
-   */
+
   if (
-    input.stage !== 'wishlist' &&
+    input.stage !==
+      'wishlist' &&
+
     !dateSent
   ) {
     throw new Error(
@@ -344,172 +242,466 @@ function normaliseNewApplication(
     );
   }
 
+
   return {
     company,
+
     role,
+
     link,
+
     dateSent,
-    stage: input.stage,
+
+    stage:
+      input.stage,
+
     notes,
   };
 }
 
+
 /*
 |--------------------------------------------------------------------------
-| Public API
+| Current profile
+|--------------------------------------------------------------------------
+*/
+
+async function getCurrentProfileId():
+Promise<string> {
+  const email =
+    getCurrentEmail();
+
+
+  if (!email) {
+    throw new Error(
+      'No email has been selected.'
+    );
+  }
+
+
+  const profile =
+    await findProfileByEmail(
+      email
+    );
+
+
+  if (!profile) {
+    throw new Error(
+      'That profile no longer exists.'
+    );
+  }
+
+
+  return profile.id;
+}
+
+
+/*
+|--------------------------------------------------------------------------
+| Fetch one application
+|--------------------------------------------------------------------------
+*/
+
+async function fetchApplication(
+  id: string,
+  profileId: string
+): Promise<Application> {
+  const {
+    data,
+    error,
+  } =
+    await supabase
+      .from(
+        'applications'
+      )
+      .select(
+        `
+        id,
+        profile_id,
+        company,
+        role,
+        link,
+        date_sent,
+        stage,
+        notes,
+        created_at
+        `
+      )
+      .eq(
+        'id',
+        id
+      )
+      .eq(
+        'profile_id',
+        profileId
+      )
+      .maybeSingle();
+
+
+  if (error) {
+    console.error(
+      'Unable to load application',
+      error
+    );
+
+    throw new Error(
+      'Unable to load that application.'
+    );
+  }
+
+
+  if (!data) {
+    throw new Error(
+      'Application not found.'
+    );
+  }
+
+
+  return mapApplication(
+    data as ApplicationRow
+  );
+}
+
+
+/*
+|--------------------------------------------------------------------------
+| Fetch applications
 |--------------------------------------------------------------------------
 */
 
 export async function fetchApplications():
 Promise<Application[]> {
-  return read();
+  const profileId =
+    await getCurrentProfileId();
+
+
+  const {
+    data,
+    error,
+  } =
+    await supabase
+      .from(
+        'applications'
+      )
+      .select(
+        `
+        id,
+        profile_id,
+        company,
+        role,
+        link,
+        date_sent,
+        stage,
+        notes,
+        created_at
+        `
+      )
+      .eq(
+        'profile_id',
+        profileId
+      )
+      .order(
+        'created_at',
+        {
+          ascending: false,
+        }
+      );
+
+
+  if (error) {
+    console.error(
+      'Unable to load applications',
+      error
+    );
+
+    throw new Error(
+      'Unable to load applications.'
+    );
+  }
+
+
+  return (
+    data ?? []
+  ).map(
+    row =>
+      mapApplication(
+        row as ApplicationRow
+      )
+  );
 }
+
+
+/*
+|--------------------------------------------------------------------------
+| Create
+|--------------------------------------------------------------------------
+*/
 
 export async function createApplication(
   input: NewApplication
 ): Promise<Application> {
   const cleanInput =
-    normaliseNewApplication(input);
+    normaliseNewApplication(
+      input
+    );
 
-  /*
-   * Read BEFORE constructing our final list.
-   */
-  const jobs = read();
 
-  const job: Application = {
-    ...cleanInput,
+  const profileId =
+    await getCurrentProfileId();
 
-    id: crypto.randomUUID(),
 
-    createdAt:
-      new Date().toISOString(),
-  };
+  const {
+    data,
+    error,
+  } =
+    await supabase
+      .from(
+        'applications'
+      )
+      .insert({
+        profile_id:
+          profileId,
 
-  write([
-    job,
-    ...jobs,
-  ]);
+        company:
+          cleanInput.company,
 
-  return job;
+        role:
+          cleanInput.role,
+
+        link:
+          cleanInput.link ??
+          null,
+
+        date_sent:
+          cleanInput.dateSent ||
+          null,
+
+        stage:
+          cleanInput.stage,
+
+        notes:
+          cleanInput.notes ??
+          null,
+      })
+      .select(
+        `
+        id,
+        profile_id,
+        company,
+        role,
+        link,
+        date_sent,
+        stage,
+        notes,
+        created_at
+        `
+      )
+      .single();
+
+
+  if (error) {
+    console.error(
+      'Unable to create application',
+      error
+    );
+
+    throw new Error(
+      'Unable to save the application.'
+    );
+  }
+
+
+  return mapApplication(
+    data as ApplicationRow
+  );
 }
+
+
+/*
+|--------------------------------------------------------------------------
+| Update
+|--------------------------------------------------------------------------
+*/
 
 export async function updateApplication(
   id: string,
   changes: Partial<Application>
 ): Promise<Application> {
-  const jobs = read();
+  const profileId =
+    await getCurrentProfileId();
 
-  const index =
-    jobs.findIndex(
-      (job) => job.id === id
+
+  const current =
+    await fetchApplication(
+      id,
+      profileId
     );
 
-  if (index < 0) {
+
+  const clean =
+    normaliseNewApplication({
+      company:
+        changes.company ??
+        current.company,
+
+      role:
+        changes.role ??
+        current.role,
+
+      link:
+        changes.link !==
+        undefined
+          ? changes.link
+          : current.link,
+
+      dateSent:
+        changes.dateSent ??
+        current.dateSent,
+
+      stage:
+        changes.stage ??
+        current.stage,
+
+      notes:
+        changes.notes !==
+        undefined
+          ? changes.notes
+          : current.notes,
+    });
+
+
+  const {
+    data,
+    error,
+  } =
+    await supabase
+      .from(
+        'applications'
+      )
+      .update({
+        company:
+          clean.company,
+
+        role:
+          clean.role,
+
+        link:
+          clean.link ??
+          null,
+
+        date_sent:
+          clean.dateSent ||
+          null,
+
+        stage:
+          clean.stage,
+
+        notes:
+          clean.notes ??
+          null,
+      })
+      .eq(
+        'id',
+        id
+      )
+      .eq(
+        'profile_id',
+        profileId
+      )
+      .select(
+        `
+        id,
+        profile_id,
+        company,
+        role,
+        link,
+        date_sent,
+        stage,
+        notes,
+        created_at
+        `
+      )
+      .maybeSingle();
+
+
+  if (error) {
+    console.error(
+      'Unable to update application',
+      error
+    );
+
+    throw new Error(
+      'Unable to update the application.'
+    );
+  }
+
+
+  if (!data) {
     throw new Error(
       'Application not found.'
     );
   }
 
-  const current =
-    jobs[index];
 
-  /*
-   * We deliberately construct the editable fields.
-   *
-   * We do NOT allow id or createdAt to be overwritten.
-   */
-  const merged: Application = {
-    ...current,
-
-    company:
-      typeof changes.company === 'string'
-        ? changes.company
-        : current.company,
-
-    role:
-      typeof changes.role === 'string'
-        ? changes.role
-        : current.role,
-
-    link:
-      changes.link !== undefined
-        ? changes.link
-        : current.link,
-
-    dateSent:
-      typeof changes.dateSent === 'string'
-        ? changes.dateSent
-        : current.dateSent,
-
-    stage:
-      changes.stage ??
-      current.stage,
-
-    notes:
-      changes.notes !== undefined
-        ? changes.notes
-        : current.notes,
-
-    /*
-     * Protected values.
-     */
-    id: current.id,
-    createdAt: current.createdAt,
-  };
-
-  /*
-   * Run the updated record through the same
-   * validation as a newly-created application.
-   */
-  const clean =
-    normaliseNewApplication(merged);
-
-  const updated: Application = {
-    ...clean,
-
-    id: current.id,
-    createdAt:
-      current.createdAt,
-  };
-
-  jobs[index] =
-    updated;
-
-  write(jobs);
-
-  return updated;
+  return mapApplication(
+    data as ApplicationRow
+  );
 }
+
+
+/*
+|--------------------------------------------------------------------------
+| Delete
+|--------------------------------------------------------------------------
+*/
 
 export async function deleteApplication(
   id: string
 ): Promise<void> {
-  const jobs = read();
+  const profileId =
+    await getCurrentProfileId();
 
-  const index =
-    jobs.findIndex(
-      (job) => job.id === id
+
+  const {
+    data,
+    error,
+  } =
+    await supabase
+      .from(
+        'applications'
+      )
+      .delete()
+      .eq(
+        'id',
+        id
+      )
+      .eq(
+        'profile_id',
+        profileId
+      )
+      .select(
+        'id'
+      );
+
+
+  if (error) {
+    console.error(
+      'Unable to delete application',
+      error
     );
 
-  if (index < 0) {
+    throw new Error(
+      'Unable to delete the application.'
+    );
+  }
+
+
+  if (
+    !data ||
+    data.length === 0
+  ) {
     throw new Error(
       'Application not found.'
     );
   }
-
-  /*
-   * Remove EXACTLY ONE application.
-   *
-   * This makes the intention extremely explicit and prevents
-   * another accidental reversed filter condition.
-   */
-  jobs.splice(index, 1);
-
-  write(jobs);
 }
-
-/*
- * Exported so our storage hook/tests can listen for changes
- * without duplicating the key string elsewhere.
- */
-export const APPLICATIONS_STORAGE_KEY =
-  KEY;

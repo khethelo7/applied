@@ -12,110 +12,97 @@ import type {
   NewApplication,
 } from '../types';
 
+
 export function useApplications() {
   const [
     applications,
     setApplications,
-  ] = useState<Application[]>([]);
+  ] =
+    useState<Application[]>(
+      []
+    );
+
 
   const [
     loading,
     setLoading,
-  ] = useState(true);
+  ] =
+    useState(true);
+
 
   const [
     saving,
     setSaving,
-  ] = useState(false);
+  ] =
+    useState(false);
+
 
   const [
     error,
     setError,
-  ] = useState('');
+  ] =
+    useState('');
 
-  /*
-   * Refresh React's copy of the data from localStorage.
-   */
+
   const reload =
-    useCallback(async () => {
-      setLoading(true);
-      setError('');
+    useCallback(
+      async () => {
+        setLoading(true);
 
-      try {
-        const jobs =
-          await api.fetchApplications();
+        setError('');
 
-        setApplications(jobs);
-      } catch (e) {
-        setError(
-          e instanceof Error
-            ? e.message
-            : 'Unable to load applications'
-        );
-      } finally {
-        setLoading(false);
-      }
-    }, []);
 
-  /*
-   * Initial application load.
-   */
-  useEffect(() => {
-    void reload();
-  }, [reload]);
+        try {
+          const jobs =
+            await api
+              .fetchApplications();
 
-  /*
-   * Synchronise multiple browser tabs.
-   *
-   * Example:
-   *
-   * Tab A deletes an application.
-   * Tab B automatically reloads its application list.
-   */
-  useEffect(() => {
-    function onStorage(
-      event: StorageEvent
-    ) {
-      if (
-        event.key ===
-        api.APPLICATIONS_STORAGE_KEY
-      ) {
-        void reload();
-      }
-    }
-
-    window.addEventListener(
-      'storage',
-      onStorage
+          setApplications(
+            jobs
+          );
+        } catch (e) {
+          setError(
+            e instanceof Error
+              ? e.message
+              : 'Unable to load applications'
+          );
+        } finally {
+          setLoading(false);
+        }
+      },
+      []
     );
 
-    return () =>
-      window.removeEventListener(
-        'storage',
-        onStorage
-      );
-  }, [reload]);
 
-  /*
-   * Shared wrapper for every operation that modifies storage.
-   */
+  useEffect(
+    () => {
+      void reload();
+    },
+    [
+      reload,
+    ]
+  );
+
+
   async function write<T>(
-    operation: () => Promise<T>
+    operation:
+      () => Promise<T>
   ) {
     setSaving(true);
+
     setError('');
+
 
     try {
       const result =
         await operation();
 
-      /*
-       * Re-read the real persisted data rather than
-       * assuming our React state matches localStorage.
-       */
+
       setApplications(
-        await api.fetchApplications()
+        await api
+          .fetchApplications()
       );
+
 
       return result;
     } catch (e) {
@@ -131,36 +118,62 @@ export function useApplications() {
     }
   }
 
+
   return {
     applications,
+
     loading,
+
     saving,
+
     error,
+
     reload,
 
-    add: (
-      input: NewApplication
-    ) =>
-      write(() =>
-        api.createApplication(input)
-      ),
 
-    update: (
-      id: string,
-      changes: Partial<Application>
-    ) =>
-      write(() =>
-        api.updateApplication(
-          id,
-          changes
-        )
-      ),
+    add:
+      (
+        input:
+          NewApplication
+      ) =>
+        write(
+          () =>
+            api
+              .createApplication(
+                input
+              )
+        ),
 
-    remove: (
-      id: string
-    ) =>
-      write(() =>
-        api.deleteApplication(id)
-      ),
+
+    update:
+      (
+        id:
+          string,
+
+        changes:
+          Partial<Application>
+      ) =>
+        write(
+          () =>
+            api
+              .updateApplication(
+                id,
+                changes
+              )
+        ),
+
+
+    remove:
+      (
+        id:
+          string
+      ) =>
+        write(
+          () =>
+            api
+              .deleteApplication(
+                id
+              )
+        ),
   };
 }
